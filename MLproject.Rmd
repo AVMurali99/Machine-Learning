@@ -1,0 +1,120 @@
+---
+title: "Predicting if exercises are being done right"
+output: html_document
+---
+
+### Synopsis  
+Developing a machine learning algorithm to predict if exercises are being done in the correct manner using human activity recognition data
+
+### Process  
+Let us load some required packages:
+
+```{r message=FALSE}
+library(caret)
+library(tree)
+library(randomForest)
+library(rpart)
+```
+
+Now let us load the data and take a quick look:
+
+```{r}
+training <- read.csv("pml-training.csv", header = TRUE, na.strings = c("","NA"))
+testing <- read.csv("pml-testing.csv", header = TRUE, na.strings = c("","NA"))
+dim(training)
+```
+
+There are about 20K observations of 160 variables. Looking at the structure of the training dataframe, there are a lot of NA's and also another NA value "#DIV/0!" that's all over the data. Let us reload the data with this new NA string also included.
+
+```{r}
+training <- read.csv("pml-training.csv", header = TRUE, na.strings = c("","NA","#DIV/0!"))
+testing <- read.csv("pml-testing.csv", header = TRUE, na.strings = c("","NA", "#DIV/0!"))
+```
+
+Closer look at the data shows a number of columns with only NA values.
+To get rid off these columns from the dataset, lets find the proportion of NAs in each columns and remove those columns that have high proportion of NAs:
+
+```{r}
+prop <- round((colSums(is.na(training))/19622), 2)
+table(prop)
+```
+
+From the table above, we can see that there are about 100 columns with mostly (98%) NAs. We can safely drop these columns and our model shouldn't be affected.
+Let us get rid off these columns in both the training and test sets:
+
+```{r}
+training <- training[colSums(is.na(training))/19622 < 0.97]
+testing <- testing[colSums(is.na(testing))/20 < 0.97]
+```
+
+I confirmed that the columns in the new training and test sets are the same except for the response column.
+
+Also, there are a few other columns (1 thorugh 6) that are just timestamps and other indicators, but not the actual variables that we would use in our model. Let us get rid off all these columns to reduce unneccessary computational complexity.
+
+```{r}
+toRmv <- c(1,2,3,4,5,6)
+training <- training[,-toRmv]
+testing <- testing[,-toRmv]
+```
+
+
+Now for cross-validation purposes and to look at error rates, as we have a lot of observations in our dataset, let us partition the training dataset in to nTrain and nTest so that we can test and improve our prediction models. 
+
+```{r}
+set.seed(13383)
+index <- createDataPartition(training$classe, p = 0.75, list = FALSE) 
+nTrain <- training[index,]
+nTest <- training[-index,]
+```
+
+Since the response variable "classe" is a factor, let us use classification trees method "rpart" for fitting our model and see how that model performs:
+
+```{r cache=TRUE}
+modFit <- train(classe ~ ., method = "rpart", data = nTrain)
+modFit$results[1,]
+```
+
+From the results above, we see that the expected accuracy is around 51% and so the expected error rate is 49%. 
+
+Let us predict using this model on the nTest partition and compare those predictions to actual values and see how the accuracy compares to the expected value above:
+```{r}
+prediction <- predict(modFit, newdata = nTest)
+cm <- confusionMatrix(prediction, nTest$classe)
+cm$overall
+```
+
+An accuracy rate of 49%, which is just below the expected rate from above, leaves much to be desired from the above model. So we have to look at other methods. One extension of the classification trees algorithm that is very effective is the random forests method. Lets try that method now:  
+```{r cache=TRUE}
+rFit <- randomForest(classe ~ ., data = nTrain)
+```
+
+Let us look at the error rates from the above fit:
+
+```{r}
+mean(colMeans(rFit$err.rate))
+```
+
+The expected error rate of this model is 0.004. Let us see how this compares to the actual error rate after predicting using this model. Let us test our model on the test partition and compare those predictions to the actual values: 
+```{r}
+rfPrediction <- predict(rFit, newdata = nTest)
+rfCM <- confusionMatrix(rfPrediction, nTest$classe)
+rfCM$overall
+```
+
+Accuracy above 0.99 meaning the error rate is close to the expected value from above. Looks like this is a very good model fit for this dataset. Infact a detailed look at the confusion matrix provided in the appendix shows that this model is performing very well overall.
+
+This was further confirmed when the predictions this model produced for the original "testing" data set turned out to be accurate also.
+
+******
+
+### Appendix  
+
+Detailed Confusion Matrix of the fitted Randomforest model on the test partition from the training dataset:
+
+```{r echo=FALSE}
+rfCM
+```
+
+
+
+
